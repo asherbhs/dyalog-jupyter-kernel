@@ -256,6 +256,7 @@ class DyalogKernel(Kernel):
         Kernel.__init__(self, **kwargs)
 
         self.dyalog_ride_connect()
+        self.ride_receive_wait() # flush startup messages
 
     def recv_all(self, msg_len):
         msg = b''
@@ -336,7 +337,7 @@ class DyalogKernel(Kernel):
             if self.connected:
                 lines = code.split('\n')
                 match = re.search('^%suspend\s+(\w+)$',lines[0].lower(), re.IGNORECASE)
-                nsmatch = re.match('^\\s*:namespace|:class|:interface',lines[0].lower())
+                # nsmatch = re.match('^\\s*:namespace|:class|:interface',lines[0].lower())
                 if match:
                     suspend = match.group(1)
                     if suspend == 'on':
@@ -354,28 +355,75 @@ class DyalogKernel(Kernel):
                         self.out_error(
                             'JUPYTER NOTEBOOK: UNDEFINED ARGUMENT TO %suspend, USE EITHER on OR off')
                     lines = lines[1:]
-                elif re.match('^\\s*∇', lines[0]):
-                    if not re.match('\\s*∇$', lines[-1]):
-                        self.out_error('DEFN ERROR: Missing closing ∇')
-                    else:
-                        lines[0] = re.sub('^\\s*∇', '', lines[0])
-                        lines = lines[:-1]
-                        self.define_function(lines)
-                    lines = []
-                elif lines[0].lower() == ']dinput':
-                    self.define_function(lines[1:])
-                    lines = []                
-                elif nsmatch:
-                    if not re.match(":end"+re.sub("^\\s*:",'',nsmatch.group(0)),lines[-1].lower()):
-                        self.out_error("DEFN ERROR: No "+":End"+re.sub("^\\s*:",'',nsmatch.group(0)))
-                        lines = []
-                    else:
-                        self.define_function(lines)
-                        lines = []
+                # elif re.match('^\\s*∇', lines[0]):
+                #     if not re.match('\\s*∇$', lines[-1]):
+                #         self.out_error('DEFN ERROR: Missing closing ∇')
+                #     else:
+                #         lines[0] = re.sub('^\\s*∇', '', lines[0])
+                #         lines = lines[:-1]
+                #         self.define_function(lines)
+                #     lines = []
+                # elif lines[0].lower() == ']dinput':
+                #     self.define_function(lines[1:])
+                #     lines = []                
+                # elif nsmatch:
+                #     if not re.match(":end"+re.sub("^\\s*:",'',nsmatch.group(0)),lines[-1].lower()):
+                #         self.out_error("DEFN ERROR: No "+":End"+re.sub("^\\s*:",'',nsmatch.group(0)))
+                #         lines = []
+                #     else:
+                #         self.define_function(lines)
+                #         lines = []
                 try:
-                    # the windows interpreter can only handle ~125 chacaters at a time, so we do one line at a time
+                    MULTILINE_NOT    = 0
+                    MULTILINE_DFN    = 1
+                    MULTILINE_TRADFN = 2
+                    MULTILINE_OO     = 3
+                    mode = MULTILINE_NOT
+                    multiline = []
+                    brace_depth = 0
                     for line in lines:
                         line = line + '\n'
+
+                        l = line
+                        l = re.sub(r"''",   "",   l)
+                        l = re.sub(r"'.*'", "''", l)
+                        brace_depth += l.count('{') - l.count('}')
+                        if mode == MULTILINE_DFN:
+                            multiline.append(line)
+                            if brace_depth <= 0:
+                                mode = MULTILINE_NOT
+                                line = '\n'.join(multiline)
+                                multiline = []
+                            else:
+                                continue
+                        elif mode == MULTILINE_TRADFN:
+                            multiline.append(line)
+                            if line.strip() == '∇':
+                                mode = MULTILINE_NOT
+                                line = '\n'.join(multiline)
+                                multiline = []
+                            else:
+                                continue
+                        elif mode == MULTILINE_OO:
+                            self.out_result("3")
+                            # TODO: handle this
+                            self.out_error("handling of object oriented cells not yet implemented")
+                            break
+                        else:
+                            if brace_depth > 0:
+                                mode = MULTILINE_DFN
+                                multiline.append(line)
+                                continue
+                            stripped = line.strip()
+                            if len(stripped) > 0 and stripped[0] == '∇':
+                                mode = MULTILINE_TRADFN
+                                multiline.append(line)
+                                continue
+                            if re.match('^\\s*:namespace|:class|:interface',line.lower()):
+                                mode = MULTILINE_OO
+                                multiline.append(line)
+                                continue
+
                         self.execute_line(line)
 
                         dq.clear()
@@ -391,6 +439,7 @@ class DyalogKernel(Kernel):
                                 self.ride_receive_wait()
 
                             received = dq.pop()
+                            self.out_result(str(received))
 
                             if received[0] == 'AppendSessionOutput':
                                 if not PROMPT_AVAILABLE:
