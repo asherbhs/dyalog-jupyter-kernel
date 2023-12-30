@@ -405,7 +405,6 @@ class DyalogKernel(Kernel):
                             else:
                                 continue
                         elif mode == MULTILINE_OO:
-                            self.out_result("3")
                             # TODO: handle this
                             self.out_error("handling of object oriented cells not yet implemented")
                             break
@@ -439,7 +438,6 @@ class DyalogKernel(Kernel):
                                 self.ride_receive_wait()
 
                             received = dq.pop()
-                            self.out_result(str(received))
 
                             if received[0] == 'AppendSessionOutput':
                                 if not PROMPT_AVAILABLE:
