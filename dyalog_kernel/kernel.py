@@ -49,6 +49,12 @@ def writeln(s):
     sys.stdout = tmp_stdout
 
 
+def log(s):
+    logfile = open("/home/abhs/cs/dyalog/dyalog-jupyter-kernel/logfile.txt", "a")
+    logfile.write(s)
+    logfile.write("\n")
+    logfile.close()
+
 class DyalogKernel(Kernel):
 
     implementation = 'Dyalog'
@@ -190,12 +196,14 @@ class DyalogKernel(Kernel):
                 self.connected = True
 
     def __init__(self, **kwargs):
+        log("__init__")
 
         # path to connection_file. In case we need it in the close future
         #from ipykernel import get_connection_file
         #s = get_connection_file()
         # debug("########## " + str(s))
 
+        log("finding port")
         self._port = DYALOG_PORT
         # lets find first available port, starting from default DYALOG_PORT (:4502)
         # this makes sense only if Dyalog APL and Jupyter executables are on the same host (localhost)
@@ -213,6 +221,7 @@ class DyalogKernel(Kernel):
                     # try next port
                     self._port += 1
 
+        log("starting dyalog")
         # if Dyalog APL and Jupyter executables are on the same host (localhost) let's start instance of Dyalog
         if DYALOG_HOST == '127.0.0.1':
             if sys.platform.lower().startswith('win'):
@@ -253,10 +262,12 @@ class DyalogKernel(Kernel):
                 self.dyalog_subprocess = subprocess.Popen([dyalog, '+s', '-q', os.path.dirname(os.path.abspath(
                     __file__)) + '/init.dws'], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=dyalog_env)
 
+        log("super init")
         Kernel.__init__(self, **kwargs)
 
+        log("connect via ride")
         self.dyalog_ride_connect()
-        self.ride_receive_wait() # flush startup messages
+        # self.ride_receive_wait() # flush startup messages
 
     def recv_all(self, msg_len):
         msg = b''
@@ -427,6 +438,7 @@ class DyalogKernel(Kernel):
 
                         dq.clear()
                         PROMPT_AVAILABLE = False
+                        pt = 1 # hack
                         err = False
                         data_collection = ''
 
@@ -438,9 +450,10 @@ class DyalogKernel(Kernel):
                                 self.ride_receive_wait()
 
                             received = dq.pop()
+                            log(str(received))
 
                             if received[0] == 'AppendSessionOutput':
-                                if not PROMPT_AVAILABLE:
+                                if pt == 0:
                                     data_collection = data_collection + \
                                         received[1].get('result')
                             elif received[0] == 'SetPromptType':
@@ -460,6 +473,8 @@ class DyalogKernel(Kernel):
                                     self.execute_line("→\n")
                                     raise ValueError(
                                         'JUPYTER NOTEBOOK: Input through ⎕ is not supported')
+                                elif pt == 3:
+                                    PROMPT_AVAILABLE = False
                                 elif pt == 4:
                                     time.sleep(1)
                                     raise ValueError(
